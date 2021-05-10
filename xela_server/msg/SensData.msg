@@ -1,0 +1,2 @@
+SensName sensor
+SensPoint position

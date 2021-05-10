@@ -1,0 +1,4 @@
+int16 sensor
+int16 taxel
+---
+uint32 value

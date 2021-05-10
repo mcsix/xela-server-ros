@@ -1,0 +1,530 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+'''Xela Sensors Service node'''
+import time
+import subprocess
+import os
+import sys
+import asyncio
+#import socketio
+import websocket
+import json
+import threading
+import ctypes
+import rospy# pylint: disable = import-error
+#import all messages (pylint exclusions added)
+from xela_server.srv import XelaSensorX, XelaSensorXResponse# pylint: disable = no-name-in-module, import-error
+from xela_server.srv import XelaSensorY, XelaSensorYResponse# pylint: disable = no-name-in-module, import-error
+from xela_server.srv import XelaSensorZ, XelaSensorZResponse# pylint: disable = no-name-in-module, import-error
+from xela_server.srv import XelaSensorXY, XelaSensorXYResponse# pylint: disable = no-name-in-module, import-error
+from xela_server.srv import XelaSensorXYZ, XelaSensorXYZResponse# pylint: disable = no-name-in-module, import-error
+from xela_server.srv import XelaSensorStream, XelaSensorStreamResponse# pylint: disable = no-name-in-module, import-error
+#include message for Subscription
+from xela_server.msg import xServerMsg# pylint: disable = no-name-in-module, import-error
+from xela_server.msg import SensPoint# pylint: disable = no-name-in-module, import-error
+
+import argparse
+import importlib
+#from xelatools import *# pylint: disable = unused-wildcard-import
+
+
+__version__ = "1.7.0a_53001"
+
+class ConfHolder(object):
+    def __init__(self,**kwargs):
+        self.failures = []
+        klist = kwargs.keys()
+        if len(klist)>0:
+            for i in klist:
+                try:
+                    self.set_attr(i,kwargs[i])
+                except:
+                    pass
+    def __getattr__(self,obj=None):
+        self.failures.append((time.time(),obj))
+        return None
+    def get_fails(self):
+        ret = []
+        if len(self.failures)>0:
+            ret = self.failures
+        return ret
+    def set_attr(self,attr,val):
+        self.__setattr__(attr,val)
+    def apply_dict(self, dictionary):
+        keys = list(dictionary.keys())
+        if len(keys)>0:
+            for i in range(len(keys)):
+                self.set_attr(keys[i], dictionary[keys[i]])
+    def getint(self, attr):
+        try:
+            val = self.__getattribute__(attr)
+        except:
+            self.failures.append((time.time(),attr))
+            val = 0
+        try:
+            return int(val)
+        except:
+            return 0
+    def asdict(self):
+        return self.__dict__
+
+
+class ArgMgr(object):
+    def __init__(self,fstring=None,logfile="log.log",col="200:200:255",version=None,appname=None):
+        app = appname if appname else "xela"
+        ver = version if version else __version__
+        arglist = []
+        try:
+            arglist.extend(sys.argv[1:])
+        except:
+            pass
+        color = "\033[38:2:{}m".format(col)
+        nt = os.name == "nt"
+        deflog = "LOG/{}".format(logfile) if nt else "/etc/xela/LOG/{}".format(logfile)
+        defini = "xServ.ini" if nt else "/etc/xela/xServ.ini"
+        defcsv = "CSV" if nt else "/etc/xela/CSV"
+        defdevice = "esd" if nt else "socketcan"
+        defchannel = "0" if nt else "can0"
+        try:
+            sv = sys.argv[1]
+        except:
+            sv = ""
+        if sv == "--multiprocessing-fork":
+            sys.sdterr.write("Error with argument handling. {}".format(sys.argv))
+            ARGS = {"debug":"MP error"}
+            ks = ["debug"]
+        else:
+            ARGM = argparse.ArgumentParser(prog=app, formatter_class=argparse.RawTextHelpFormatter, add_help=False)
+            if fstring:
+                if "p" in fstring:
+                    ARGM.add_argument('-p', '--port', default=5000, type=int, help="{}Server port\033[0m".format(color))
+                if "a" in fstring and not "q" in fstring:
+                    ARGM.add_argument('-d', '--debug_level', default=0, choices=range(4), type=int, help="{}Debug Level (0-3) (default: 0)\033[0m".format(color))
+                if "i" in fstring:
+                    ARGM.add_argument('-i', '--ip', default="127.0.0.1", help="{}Server IP\033[0m".format(color))
+                ARGM.add_argument('--debug', action="store_true", help=argparse.SUPPRESS)
+                ARGM.add_argument('--roslog', help=argparse.SUPPRESS)
+                ARGM.add_argument('--rosname', help=argparse.SUPPRESS)
+            else:
+                ARGM.add_argument("args", help="\033[31mPlease call ArgMgr with fstring.\033[0m")
+            ARGM.add_argument('-v', '--version', action='version', version='{} {}'.format(app, ver), help="{}Show program's version number and exit.\033[0m".format(color))
+            ARGM.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS, help='{}Show this help message and exit.\033[0m'.format(color))
+            if not fstring:
+                ARGS=vars(ARGM.parse_args(["-h"]))
+            else:
+                try:
+                    ARGS=vars(ARGM.parse_args(arglist))
+                except Exception as error:
+                    sys.sdterr.write("{}: {}".format(type(error).__name__,error))
+                    sys.sdterr.write("Error with argparser\n\t\t\t{}".format(arglist))
+                    sys.exit(1)
+            ks = list(ARGS.keys())
+        self.ch = ConfHolder()
+        self.raw = ARGS
+        for i in ks:
+            self.ch.set_attr(i, ARGS[i])
+        if os.name == "nt":
+            osver = "Windows 10"
+        else:
+            try:
+                import distro
+                a,b,c = distro.linux_distribution()
+                if " " in a:
+                    t = a.split(" ")
+                    a = t[0]
+                a = a.lower()
+                osver = "{} {} ({})".format(a.capitalize(),b,c)
+            except:
+                osver = "Linux (unknown distro)"
+        self.ch.set_attr("osname",osver)
+        self.ch.set_attr("appver",ver)
+    def get_config(self):
+        return self.ch
+    def get_raw(self):
+        return self.raw
+    def startup(self):
+        self._msg.print("Startup:\n\t\tConf:\t\033[32m{}\033[0m\n\t\tAddr:\t\033[32m{}\033[0m\n\t\tPort:\t\033[32m{}\033[0m\n".format(self.ch.file, self.ch.ip, self.ch.port))
+
+
+def tup(com):
+    a, _ = com.communicate()
+    return "{}".format(a.decode())
+
+ROS_D = subprocess.Popen(["rosversion", "-s", "-d"], stdout=subprocess.PIPE)
+ROS_V = subprocess.Popen(["rosversion", "-s", "rospy"], stdout=subprocess.PIPE)
+ROS_DISTRO = "{}".format(tup(ROS_D))
+ROS_VERSION = "{}".format(tup(ROS_V))
+ROS_RELEASE = "ROS {}{} {}".format(ROS_DISTRO[0:1].upper(), ROS_DISTRO[1:], ROS_VERSION)
+
+IAM = os.getpid()
+
+ARG_HOL = ArgMgr(fstring="pia",logfile="xt.log",col="200:200:255",version=__version__,appname="xela_service")# pylint: disable = undefined-variable
+
+def error_reporter(err, frame=0, mtype="error"):
+    '''Error Reporter (with line number support)'''
+    if frame == 0:
+        print("[{}]\t{}".format(mtype, err))
+    else:
+        print("[{}]\t[line {}] {}".format(mtype, frame, err))
+
+print("XELA Server ROS Service handler")
+print("Made for ROS Noetic")
+print("Running on: {}".format(ROS_RELEASE))
+
+CONFIG = ARG_HOL.get_config()
+print("ARGS: {}".format(CONFIG.asdict()))
+
+def resp(r_type=None, sensor=None, taxel=None, data=None, c_type=1,overrride=False):
+    c_type = "{}".format(c_type)
+    if c_type not in ["1","2","3","4","5","6"]:
+        c_type = "1"
+    ret = ""
+    if CONFIG.debug_level>0 or c_type == "1" or overrride:
+        ret = "{0}\033[3{1}mRequest type: \033[36;40m{2}\033[0m\033[3{1}m at \033[36;40m{3}\033[0m".format(ret,c_type,r_type,time.time())
+        if CONFIG.debug_level>1 or overrride:
+            ret = "{0}\n\t\t\033[3{1}mSensor: \033[36;40m{2}\033[0m, \033[3{1}mTaxel: \033[36;40m{3}\033[0m".format(ret,c_type,sensor,taxel)
+            if CONFIG.debug_level>2 or overrride:
+                ret = "{0}\n\t\t\033[3{1}mData: \033[36;40m{2}\033[0m".format(ret,c_type,"{}".format(data))
+    if ret != "":
+        sys.stdout.write("[\033[34mDEBUG\033[0m]\t{}\n".format(ret))
+
+SENSOR_DATA = {}
+SENSOR_STREAM = {}
+TIME_STAMP = time.time()
+class XYZ(object):
+    def __init__(self, xyz_x, xyz_y, xyz_z):
+        '''INIT'''
+        self.set_values(xyz_x, xyz_y, xyz_z)
+
+    def set_values(self, sv_x, sv_y, sv_z):
+        '''Set initial values'''
+        self.x = "{}".format(sv_x)
+        self.y = "{}".format(sv_y)
+        self.z = "{}".format(sv_z)
+
+    def tuple_xyz(self):
+        return (int(self.x), int(self.y), int(self.z))
+
+    def __repr__(self):
+        '''REPR'''
+        return '[{}, {}, {}]'.format(self.x, self.y, self.z)
+
+    def my_size(self):
+        '''Represent self'''
+        _ = self.x
+        return 1
+
+    def __len__(self):
+        '''LEN'''
+        return self.my_size()
+
+    def __str__(self):
+        '''String return'''
+        return "{},{},{}".format(self.x, self.y, self.z)
+
+class SensorObject(object):
+    def __init__(self, sens, tax, x, y, z):
+        self.sensor = sens
+        self.taxel = tax
+        self.xyz = XYZ(x,y,z)
+
+def summer(num):
+    try:
+        if isinstance(num, int):
+            return num
+        elif isinstance(num, list):
+            return min(num)
+        else:
+            return 0
+    except Exception as e:
+        print("Error in Summer: {}: {}".format(type(e).__name__,e))
+        return 0
+
+def get_x_y_z(data,letter):
+    '''get single element for specified sensor and taxel'''
+    letter = "{}".format(letter).upper()
+    sens = None
+    tax = None
+    try:
+        sens = data.sensor
+        tax = data.taxel
+        seta = SENSOR_DATA[(sens, tax)]
+        data = int(seta.x) if letter == "X" else int(seta.y) if letter == "Y" else int(seta.z) if letter == "Z" else [int(seta.x), int(seta.y)] if letter == "XY" else [int(seta.x), int(seta.y), int(seta.z)] if letter == "XYZ" else 0
+        if summer(data) == 0:
+            resp("Get{}".format(letter),sens,tax,"Error: ValueError: Sensor {} does not have Taxel {}".format(sens,tax),1,True)
+        else:
+            resp("Get{}".format(letter),sens,tax,data,2)
+    except KeyError as e:
+        if sens is not None and tax is not None:
+            resp("Get{}".format(letter),sens,tax,"Error: ValueError: Sensor {} does not have Taxel {}".format(sens,tax),1,True)
+        else:
+            resp("Get{}".format(letter),sens,tax,"Error: ValueError: No Value for set sensor and taxel",1,True)
+        data = 0
+    except Exception as e:
+        resp("Get{}".format(letter),sens,tax,"Error: {}: {}".format(type(e).__name__, e),1,True)
+        #error_reporter("GetX: {}: {}".format(type(e).__name__, e), 0, "warning")
+        data = 0
+    if letter == "XY" and data == 0:
+        data = [0,0]
+    if letter == "XYZ" and data == 0:
+        data = [0,0,0]
+    return  data
+
+def get_x(data):
+    '''get sensor x data only'''
+    return  XelaSensorXResponse(get_x_y_z(data,"x"))
+
+def get_y(data):
+    '''get sensor y data only'''
+    return  XelaSensorYResponse(get_x_y_z(data,"y"))
+
+def get_z(data):
+    '''get sensor z data only'''
+    return  XelaSensorZResponse(get_x_y_z(data,"z"))
+
+def get_xy(data):
+    '''get sensor xy data only'''
+    return  XelaSensorXYResponse(get_x_y_z(data,"xy"))
+
+def get_xyz(data):
+    '''get sensor xyz data'''
+    return  XelaSensorXYZResponse(get_x_y_z(data,"xyz"))
+
+class AttrDict(dict):
+    '''special class for dict'''
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
+        _ = self.__dict__
+
+def get_set_data(data):
+    '''Set internal buffer for received values'''
+    global SENSOR_DATA, SENSOR_STREAM, TIME_STAMP
+    oldtime = TIME_STAMP + 5.0
+    newtime = time.time()
+    if oldtime < newtime:
+        sys.stdout.write("Timeout ({} < {})".format(oldtime, newtime))
+        TIME_STAMP = newtime
+        try:
+            for i in range(1, len(SENSOR_STREAM)):
+                for j in range(1, len(SENSOR_STREAM[i])):
+                    SENSOR_STREAM[i][j] = XYZ(0, 0, 0)
+        except Exception as gsde:
+            error_reporter("GSD ERROR: {}: {}".format(type(gsde).__name__, gsde), 299, "error")
+    else:
+        try:
+            SENSOR_DATA[(data.sensor, data.taxel)] = data.xyz
+        except Exception as gsde:
+            error_reporter("GSD ERROR S: {}: {}".format(type(gsde).__name__, gsde), 306, "error")
+        else:
+            try:
+                if len(SENSOR_STREAM[data.sensor]) < int(data.taxel):
+                    for _ in range(len(SENSOR_STREAM[data.sensor]), int(data.taxel)):
+                        SENSOR_STREAM[data.sensor].append(0)
+            except Exception:
+                SENSOR_STREAM.setdefault(data.sensor, [])
+                for _ in range(len(SENSOR_STREAM[data.sensor]), data.taxel):
+                    SENSOR_STREAM[data.sensor].append(0)
+            try:
+                SENSOR_STREAM[data.sensor][int(data.taxel)-1] = XYZ(data.xyz.x, data.xyz.y, data.xyz.z)
+            except Exception as gsde:
+                error_reporter("GSD ERROR X: {}: {}\n\t{}\n\t{}".format(type(gsde).__name__, gsde, data, SENSOR_STREAM), 452, "error")
+            TIME_STAMP = newtime
+
+def service_data_stream(data):
+    '''Receive from stream'''
+    global SENSOR_STREAM, TIME_STAMP
+    oldtime = TIME_STAMP + 5.0
+    newtime = time.time()
+    try:
+        sens = int(data.sensor)
+    except:
+        resp("GetStream","None","None","Error: Request was not valid",1,True)
+        data = [SensPoint(0, 0, 0)]
+    else:
+        if oldtime < newtime:
+            resp("GetStream",sens,"None","Error: Sensor data is outdated",1,True)
+            data = [SensPoint(0, 0, 0)]
+        else:
+            try:
+                stre = SENSOR_STREAM[sens]
+                nstre = []
+                for i in stre:
+                    nstre.append(SensPoint(*i.tuple_xyz()))
+                resp("GetStream",sens,"[1]" if len(stre) < 2 else "[1-{}]".format(len(stre)),nstre,2)
+                data = nstre
+            except Exception as e:
+                resp("GetStream",sens,"None","Sensor Stream Error: {}: {}".format(type(e).__name__, e),1,True)
+                data = [SensPoint(0, 0, 0)]
+    return XelaSensorStreamResponse(data)
+
+
+try:
+    rospy.init_node('xSensorService_node')
+except rospy.exceptions.ROSInitException:
+    print()
+    print("\033[1AFailed to connect to ROS")
+    exit()
+if rospy.is_shutdown():
+    sys.stderr.write("ROS not running\n")
+else:
+    sys.stderr.write("ROS started\n")
+SERVICE = rospy.Service('xServX', XelaSensorX, get_x)
+SERVICE = rospy.Service('xServY', XelaSensorY, get_y)
+SERVICE = rospy.Service('xServZ', XelaSensorZ, get_z)
+SERVICE = rospy.Service('xServXY', XelaSensorXY, get_xy)
+SERVICE = rospy.Service('xServXYZ', XelaSensorXYZ, get_xyz)
+SERVICE = rospy.Service('xServStream', XelaSensorStream, service_data_stream)
+_ = SERVICE
+
+class Counter():
+    def __init__(self, begin=0):
+        self.var = begin
+    def add(self, amount):
+        self.var += amount
+    def subtract(self, amount):
+        self.var -= amount
+    def decrement(self):
+        self.var -= 1
+    def increment(self):
+        self.var += 1
+    def __int__(self):
+        return self.var
+    def __repr__(self):
+        return str(self.var)
+    def __str__(self):
+        return str(self.var)
+    def reset(self):
+        self.var = 0
+
+myCount = Counter()
+
+#sio = socketio.AsyncClient(reconnection=False)
+loop = asyncio.get_event_loop()
+
+NSLIST = []
+
+for i in range(16):
+    NSLIST.append("/sensor{}".format(i+1))
+
+def message_parser(msg_obj):
+    ret = ""
+    try:
+        ret = msg_obj[u"data"]
+        sen = msg_obj[u"sensor"]
+    except AttributeError:
+        sys.stderr.write("Parser error: {}\n".format(msg_obj))
+    else:
+        try:
+            nums = ret.split(",")
+            if len(nums) > 1:
+                txls = int(len(nums)/3)
+                if txls>0:
+                    for i in range(txls):
+                        x = int(nums[i*3],16)
+                        y = int(nums[i*3+1],16)
+                        z = int(nums[i*3+2],16)
+                        get_set_data(SensorObject(int(sen),i+1,x,y,z))
+                ret = nums
+        except Exception as e:
+            sys.stderr.write("Parser error: {}: {}".format(type(e).__name__,e))
+
+myTime = Counter()
+
+def on_message(wsapp, message):
+    try:
+        data = json.loads(message)
+    except Exception:
+        pass
+    else:
+        try:
+            if data["message"] == "Welcome":
+                pass
+            else:
+                for i in range(128):
+                    try:
+                        message_parser(data[str(i+1)])
+                    except Exception:
+                        pass
+        except Exception:
+            pass #ignore message as it's probably invalid
+def get_ip(setIP=None):
+    if setIP is None or "127.0.0.1" in setIP:
+        socket = importlib.import_module("socket")
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('1.2.3.4', 1))
+            IP = s.getsockname()
+        except Exception:
+            IP = ['127.0.0.1']
+        finally:
+            s.close()
+    else:
+        IP = [setIP]
+    return IP[0]
+
+class Online(object):
+    def __init__(self, val=False):
+        self.status = val
+    def set(self,val):
+        self.status = val
+    def __repr__(self):
+        return self.status
+    def get(self):
+        return self.__repr__()
+    def __str__(self):
+        return str(self.__repr__())
+
+ME_ONLINE = Online(True)
+
+async def start_server():
+    global wsapp
+    ip = get_ip(CONFIG.ip)
+    sys.stderr.write("\033[31mhttp://{}:{}\033[0m\n".format(ip,CONFIG.port))
+    websocket.setdefaulttimeout(1) #you should avoid increasing it.
+    wsapp = websocket.WebSocketApp("ws://{}:{}".format(ip,CONFIG.port), on_message=on_message)#set up WebSockets
+    while ME_ONLINE:
+        ncd = True
+        try:
+            wsapp.run_forever() #Run until connection dies
+        except KeyboardInterrupt:
+            ME_ONLINE.set(False)
+            wsapp.close()
+            #ERRMGR.log("\033[2AUser cancellation")
+            print("Finished")
+            os.kill(IAM, 15)
+        except Exception as exp:
+            ME_ONLINE.set(False)
+            print("EXCEPTION: {}: {}".format(type(exp).__name__, exp))
+            print("Ending")
+            await asyncio.sleep(2)
+            os.kill(IAM, 15)
+
+def rosrunth():
+    rospy.spin()
+    ME_ONLINE.set(False)
+    time.sleep(2)
+    try:
+        wsapp.close()#asyncio.run_coroutine_threadsafe(sio.disconnect(),loop)
+    except:
+        pass
+        try:
+            sio.disconnect()
+        except:
+            pass
+
+def starter():
+    loop.run_until_complete(start_server())
+
+def _threader(target):
+    t = threading.Thread(target=target)
+    t.daemon = True
+    t.start()
+
+_threader(starter)
+rosrunth()
+ME_ONLINE.set(False)
+time.sleep(1)
+print("\033[38;2;255;176;0mBye-bye!\033[0m")
+
+sys.exit(0)
