@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+j="";
+for arg in "$@"
+do
+    j="$j $arg";
+done
+xela_server$j

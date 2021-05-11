@@ -6,7 +6,6 @@ import subprocess
 import os
 import sys
 import asyncio
-#import socketio
 import websocket
 import json
 import threading
@@ -25,7 +24,6 @@ from xela_server.msg import SensPoint# pylint: disable = no-name-in-module, impo
 
 import argparse
 import importlib
-#from xelatools import *# pylint: disable = unused-wildcard-import
 
 
 __version__ = "1.7.0a_53001"
@@ -78,64 +76,63 @@ class ArgMgr(object):
             arglist.extend(sys.argv[1:])
         except:
             pass
+        lrm = []
+        lta = []
+        sys.stderr.write("arguments IN: {}\n".format(arglist))
+        for i in range(len(arglist)):
+            if "__log:" in arglist[i]:
+                lrm.append(i)
+                lta.append("--roslog")
+                lta.append(arglist[i][7:])
+            if "__name:" in arglist[i]:
+                lrm.append(i)
+                lta.append("--rosname")
+                lta.append(arglist[i][8:])
+        lrm.reverse()
+        for i in lrm:
+            arglist.pop(i)
+        arglist.extend(lta)
+        sys.stderr.write("arguments OUT: {}\n".format(arglist))
         color = "\033[38:2:{}m".format(col)
-        nt = os.name == "nt"
-        deflog = "LOG/{}".format(logfile) if nt else "/etc/xela/LOG/{}".format(logfile)
-        defini = "xServ.ini" if nt else "/etc/xela/xServ.ini"
-        defcsv = "CSV" if nt else "/etc/xela/CSV"
-        defdevice = "esd" if nt else "socketcan"
-        defchannel = "0" if nt else "can0"
-        try:
-            sv = sys.argv[1]
-        except:
-            sv = ""
-        if sv == "--multiprocessing-fork":
-            sys.sdterr.write("Error with argument handling. {}".format(sys.argv))
-            ARGS = {"debug":"MP error"}
-            ks = ["debug"]
+        ARGM = argparse.ArgumentParser(prog=app, formatter_class=argparse.RawTextHelpFormatter, add_help=False)
+        if fstring:
+            if "p" in fstring:
+                ARGM.add_argument('-p', '--port', default=5000, type=int, help="{}Server port\033[0m".format(color))
+            if "a" in fstring and not "q" in fstring:
+                ARGM.add_argument('-d', '--debug_level', default=0, choices=range(4), type=int, help="{}Debug Level (0-3) (default: 0)\033[0m".format(color))
+            if "i" in fstring:
+                ARGM.add_argument('-i', '--ip', default="127.0.0.1", help="{}Server IP\033[0m".format(color))
+            ARGM.add_argument('--debug', action="store_true", help=argparse.SUPPRESS)
+            ARGM.add_argument('--roslog', help=argparse.SUPPRESS)
+            ARGM.add_argument('--rosname', help=argparse.SUPPRESS)
         else:
-            ARGM = argparse.ArgumentParser(prog=app, formatter_class=argparse.RawTextHelpFormatter, add_help=False)
-            if fstring:
-                if "p" in fstring:
-                    ARGM.add_argument('-p', '--port', default=5000, type=int, help="{}Server port\033[0m".format(color))
-                if "a" in fstring and not "q" in fstring:
-                    ARGM.add_argument('-d', '--debug_level', default=0, choices=range(4), type=int, help="{}Debug Level (0-3) (default: 0)\033[0m".format(color))
-                if "i" in fstring:
-                    ARGM.add_argument('-i', '--ip', default="127.0.0.1", help="{}Server IP\033[0m".format(color))
-                ARGM.add_argument('--debug', action="store_true", help=argparse.SUPPRESS)
-                ARGM.add_argument('--roslog', help=argparse.SUPPRESS)
-                ARGM.add_argument('--rosname', help=argparse.SUPPRESS)
-            else:
-                ARGM.add_argument("args", help="\033[31mPlease call ArgMgr with fstring.\033[0m")
-            ARGM.add_argument('-v', '--version', action='version', version='{} {}'.format(app, ver), help="{}Show program's version number and exit.\033[0m".format(color))
-            ARGM.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS, help='{}Show this help message and exit.\033[0m'.format(color))
-            if not fstring:
-                ARGS=vars(ARGM.parse_args(["-h"]))
-            else:
-                try:
-                    ARGS=vars(ARGM.parse_args(arglist))
-                except Exception as error:
-                    sys.sdterr.write("{}: {}".format(type(error).__name__,error))
-                    sys.sdterr.write("Error with argparser\n\t\t\t{}".format(arglist))
-                    sys.exit(1)
-            ks = list(ARGS.keys())
+            ARGM.add_argument("args", help="\033[31mPlease call ArgMgr with fstring.\033[0m")
+        ARGM.add_argument('-v', '--version', action='version', version='{} {}'.format(app, ver), help="{}Show program's version number and exit.\033[0m".format(color))
+        ARGM.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS, help='{}Show this help message and exit.\033[0m'.format(color))
+        if not fstring:
+            ARGS=vars(ARGM.parse_args(["-h"]))
+        else:
+            try:
+                ARGS=vars(ARGM.parse_args(arglist))
+            except Exception as error:
+                sys.sdterr.write("{}: {}".format(type(error).__name__,error))
+                sys.sdterr.write("Error with argparser\n\t\t\t{}".format(arglist))
+                sys.exit(1)
+        ks = list(ARGS.keys())
         self.ch = ConfHolder()
         self.raw = ARGS
         for i in ks:
             self.ch.set_attr(i, ARGS[i])
-        if os.name == "nt":
-            osver = "Windows 10"
-        else:
-            try:
-                import distro
-                a,b,c = distro.linux_distribution()
-                if " " in a:
-                    t = a.split(" ")
-                    a = t[0]
-                a = a.lower()
-                osver = "{} {} ({})".format(a.capitalize(),b,c)
-            except:
-                osver = "Linux (unknown distro)"
+        try:
+            import distro
+            a,b,c = distro.linux_distribution()
+            if " " in a:
+                t = a.split(" ")
+                a = t[0]
+            a = a.lower()
+            osver = "{} {} ({})".format(a.capitalize(),b,c)
+        except:
+            osver = "Linux (unknown distro)"
         self.ch.set_attr("osname",osver)
         self.ch.set_attr("appver",ver)
     def get_config(self):

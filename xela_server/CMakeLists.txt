@@ -56,6 +56,7 @@ include_directories(
 #############
 
 install(PROGRAMS
+  scripts/xela_server
   scripts/xela_service
   Launch/service.launch
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
