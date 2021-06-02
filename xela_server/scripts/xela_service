@@ -19,7 +19,7 @@ from xela_server.srv import XelaSensorXY, XelaSensorXYResponse# pylint: disable 
 from xela_server.srv import XelaSensorXYZ, XelaSensorXYZResponse# pylint: disable = no-name-in-module, import-error
 from xela_server.srv import XelaSensorStream, XelaSensorStreamResponse# pylint: disable = no-name-in-module, import-error
 #include message for Subscription
-from xela_server.msg import xServerMsg# pylint: disable = no-name-in-module, import-error
+from xela_server.msg import xServerMsg,xSensorData# pylint: disable = no-name-in-module, import-error
 from xela_server.msg import SensPoint# pylint: disable = no-name-in-module, import-error
 
 import argparse
@@ -188,6 +188,7 @@ def resp(r_type=None, sensor=None, taxel=None, data=None, c_type=1,overrride=Fal
 SENSOR_DATA = {}
 SENSOR_STREAM = {}
 TIME_STAMP = time.time()
+
 class XYZ(object):
     def __init__(self, xyz_x, xyz_y, xyz_z):
         '''INIT'''
@@ -372,6 +373,8 @@ SERVICE = rospy.Service('xServZ', XelaSensorZ, get_z)
 SERVICE = rospy.Service('xServXY', XelaSensorXY, get_xy)
 SERVICE = rospy.Service('xServXYZ', XelaSensorXYZ, get_xyz)
 SERVICE = rospy.Service('xServStream', XelaSensorStream, service_data_stream)
+STREAM  = rospy.Publisher('xServTopic', xServerMsg, queue_size=10)
+#pub.publish()
 _ = SERVICE
 
 class Counter():
@@ -422,9 +425,21 @@ def message_parser(msg_obj):
                         y = int(nums[i*3+1],16)
                         z = int(nums[i*3+2],16)
                         get_set_data(SensorObject(int(sen),i+1,x,y,z))
+                        try:
+                            point = xServerMsg()
+                            point.sensor = int(sen)
+                            point.taxel = i+1
+                            point.xyz = xSensorData()
+                            point.xyz.x = x
+                            point.xyz.y = y
+                            point.xyz.z = z
+                            STREAM.publish(point)
+                        except Exception:
+                            pass
                 ret = nums
         except Exception as e:
             sys.stderr.write("Parser error: {}: {}".format(type(e).__name__,e))
+        
 
 myTime = Counter()
 
@@ -477,7 +492,7 @@ ME_ONLINE = Online(True)
 async def start_server():
     global wsapp
     ip = get_ip(CONFIG.ip)
-    sys.stderr.write("\033[31mhttp://{}:{}\033[0m\n".format(ip,CONFIG.port))
+    sys.stderr.write("\033[31mws://{}:{}\033[0m\n".format(ip,CONFIG.port))
     websocket.setdefaulttimeout(1) #you should avoid increasing it.
     wsapp = websocket.WebSocketApp("ws://{}:{}".format(ip,CONFIG.port), on_message=on_message)#set up WebSockets
     while ME_ONLINE:
@@ -505,10 +520,6 @@ def rosrunth():
         wsapp.close()#asyncio.run_coroutine_threadsafe(sio.disconnect(),loop)
     except:
         pass
-        try:
-            sio.disconnect()
-        except:
-            pass
 
 def starter():
     loop.run_until_complete(start_server())
