@@ -36,8 +36,6 @@ Either run the launch file `roslaunch xela_server service.launch` or activate ev
 | noserver:=1 | Will not run xela_server (requires external launch of the app on same or different computer)|
 | port:=5000 | Define xela_server port, default is 5000 |
 | ip:=127.0.0.1 | Define xela_server IP, default is 127.0.0.1 |
-| rbport:=9090 | Define ros_bridge port, default is 9090 |
-| rbip:=localhost | Define ros_bridge IP, default is localhost |
 | file:=/etc/xela/xServ.ini | Define configuration file for xela_server, default is /etc/xela/xServ.ini |
 | d:=0 | Define debug level, default 0, max 3. Prints info based on service requests made via ROS <br>1 - Request type only <br>2 - Request type and sensor/taxel info <br>3 - Request type, sensor/taxel info and returned values |
 
