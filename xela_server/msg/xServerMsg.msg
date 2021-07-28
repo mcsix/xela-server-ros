@@ -1,4 +1,4 @@
-std_msgs/Header header
-std_msgs/Int16 sensor
-std_msgs/Int16 taxel
+Header header
+int16 sensor
+int16 taxel
 xSensorData xyz

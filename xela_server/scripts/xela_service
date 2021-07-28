@@ -427,7 +427,9 @@ def message_parser(msg_obj):
                         get_set_data(SensorObject(int(sen),i+1,x,y,z))
                         try:
                             point = xServerMsg()
+                            point.header.stamp = rospy.Time.now()
                             point.sensor = int(sen)
+
                             point.taxel = i+1
                             point.xyz = xSensorData()
                             point.xyz.x = x
