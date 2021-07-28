@@ -10,17 +10,17 @@ import websocket
 import json
 import threading
 import ctypes
-import rospy# pylint: disable = import-error
+import rospy  
 #import all messages (pylint exclusions added)
-from xela_server.srv import XelaSensorX, XelaSensorXResponse# pylint: disable = no-name-in-module, import-error
-from xela_server.srv import XelaSensorY, XelaSensorYResponse# pylint: disable = no-name-in-module, import-error
-from xela_server.srv import XelaSensorZ, XelaSensorZResponse# pylint: disable = no-name-in-module, import-error
-from xela_server.srv import XelaSensorXY, XelaSensorXYResponse# pylint: disable = no-name-in-module, import-error
-from xela_server.srv import XelaSensorXYZ, XelaSensorXYZResponse# pylint: disable = no-name-in-module, import-error
-from xela_server.srv import XelaSensorStream, XelaSensorStreamResponse# pylint: disable = no-name-in-module, import-error
+from xela_server.srv import XelaSensorX, XelaSensorXResponse
+from xela_server.srv import XelaSensorY, XelaSensorYResponse
+from xela_server.srv import XelaSensorZ, XelaSensorZResponse
+from xela_server.srv import XelaSensorXY, XelaSensorXYResponse
+from xela_server.srv import XelaSensorXYZ, XelaSensorXYZResponse
+from xela_server.srv import XelaSensorStream, XelaSensorStreamResponse
 #include message for Subscription
-from xela_server.msg import xServerMsg,xSensorData# pylint: disable = no-name-in-module, import-error
-from xela_server.msg import SensPoint# pylint: disable = no-name-in-module, import-error
+from xela_server.msg import xServerMsg,xSensorData
+from xela_server.msg import SensPoint
 
 import argparse
 import importlib
