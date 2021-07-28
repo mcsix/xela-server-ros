@@ -493,7 +493,7 @@ async def start_server():
     global wsapp
     ip = get_ip(CONFIG.ip)
     sys.stderr.write("\033[31mws://{}:{}\033[0m\n".format(ip,CONFIG.port))
-    websocket.setdefaulttimeout(1) #you should avoid increasing it.
+    # websocket.setdefaulttimeout(1) #you should avoid increasing it.
     wsapp = websocket.WebSocketApp("ws://{}:{}".format(ip,CONFIG.port), on_message=on_message)#set up WebSockets
     while ME_ONLINE:
         ncd = True
