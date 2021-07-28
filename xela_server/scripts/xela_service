@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 '''Xela Sensors Service node'''
+from __future__ import division 
 import time
 import subprocess
 import os
@@ -404,14 +405,22 @@ loop = asyncio.get_event_loop()
 
 NSLIST = []
 
+isSensorCalibrated = False
+calibrationData = []
+
 for i in range(16):
     NSLIST.append("/sensor{}".format(i+1))
 
 def message_parser(msg_obj):
+    global isSensorCalibrated, calibrationData
     ret = ""
+    # sys.stderr.write("Parser error: {}\n".format(msg_obj))
+    
     try:
         ret = msg_obj[u"data"]
         sen = msg_obj[u"sensor"]
+        model = msg_obj[u"model"]
+
     except AttributeError:
         sys.stderr.write("Parser error: {}\n".format(msg_obj))
     else:
@@ -419,26 +428,37 @@ def message_parser(msg_obj):
             nums = ret.split(",")
             if len(nums) > 1:
                 txls = int(len(nums)/3)
-                if txls>0:
+                if txls > 0 and isSensorCalibrated:
+                    point_data = xServerMsg()
+                    point_data.header.stamp = rospy.Time.now()
+                    point_data.sensor = int(sen)
+                    point_data.model = str(model)
                     for i in range(txls):
                         x = int(nums[i*3],16)
                         y = int(nums[i*3+1],16)
                         z = int(nums[i*3+2],16)
                         get_set_data(SensorObject(int(sen),i+1,x,y,z))
-                        try:
-                            point = xServerMsg()
-                            point.header.stamp = rospy.Time.now()
-                            point.sensor = int(sen)
 
-                            point.taxel = i+1
-                            point.xyz = xSensorData()
-                            point.xyz.x = x
-                            point.xyz.y = y
-                            point.xyz.z = z
-                            STREAM.publish(point)
-                        except Exception:
-                            pass
+                        xpoint = xSensorData()
+                        xpoint.taxels = int(i)
+                        xpoint.point.x = float(x)
+                        xpoint.point.y = float(y)
+                        xpoint.point.z = float(z)
+
+                        point_data.points.append( xpoint )
+
+                    STREAM.publish(point_data)
+
+                if txls > 0 and not isSensorCalibrated:
+                    for i in range(txls):
+                        x = int(nums[i*3],16)
+                        y = int(nums[i*3+1],16)
+                        z = int(nums[i*3+2],16)
+                        calibrationData.append([x, y, z])
+                        isSensorCalibrated = True
+
                 ret = nums
+
         except Exception as e:
             sys.stderr.write("Parser error: {}: {}".format(type(e).__name__,e))
         
