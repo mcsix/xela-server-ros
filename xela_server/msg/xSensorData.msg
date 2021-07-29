@@ -1,3 +1,2 @@
-uint32 x
-uint32 y
-uint32 z
+uint8 taxels
+geometry_msgs/Point point
