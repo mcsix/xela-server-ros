@@ -40,28 +40,31 @@ Either run the launch file `roslaunch xela_server service.launch` or activate ev
 | d:=0 | Define debug level, default 0, max 3. Prints info based on service requests made via ROS <br>1 - Request type only <br>2 - Request type and sensor/taxel info <br>3 - Request type, sensor/taxel info and returned values |
 
 ### Example code for ROS
+File: [example.py](https://github.com/mcsix/xela-server-ros/blob/main/example.py)
 ```python
 #!/usr/bin/env python
 
-import rospy from xela_sensors.srv
+import rospy from xela_server.srv
 import XelaSensorXYZ
 import sys
 
 rospy.init_node('use_service') 
 
-#wait the service to be advertised, otherwise the service use will fail 
+# wait the service to be advertised, otherwise the service use will fail 
 rospy.wait_for_service('xServXYZ') 
 
-#setup a local proxy for the service (we will ask for X,Y and Z data) 
+# setup a local proxy for the service (we will ask for X,Y and Z data) 
 srv=rospy.ServiceProxy('xServXYZ', XelaSensorXYZ) 
 
-#use the service and send it a value. 
-#In this case, I am sending sensor: 1 and taxel: 3 
+# use the service and send it a value. 
+# In this case, I am sending sensor: 1 and taxel: 3 
 service_example=srv(1, 3) 
 
-#print the result from the service 
+# print the result from the service 
 print(service_example) 
 
-#close the app 
+# close the app 
 sys.exit(0)
 ```
+
+In case of newer ROS like Noetic, you might need to change the shebang line to support python3
