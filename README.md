@@ -3,6 +3,7 @@
 This package is released As Is and under GNU GPL v3 license.
 ## Purpose
 This package is used to convert XELA Server packets into ROS Service messages.
+> __Note__ this package acts as a middle-ware for the main XELA Server software. Please see [xela.lat-d5.com](https://xela.lat-d5.com/) for download information
 ## Warnings
 ROS has limits on how many messages it is able to send per second, which can be a lot less than what the server app does. Therefore this app has to dump excess messages by overwriting the buffer.
 There are several residual parts from initial closed source module with confidential parts stripped out.
@@ -11,10 +12,11 @@ Python 2.7 (not recommended) or Python 3.4+
 `websocket-client` package
 ## Use
 ### Installation
-Copy the `xela_server` directory into your catkin workspace `src` directory and build as usual.
+Copy the `xela_server` directory into your catkin workspace `src` directory and build as usual.<br>
+Install the regular XELA Server software on PATH to use the launch file
 ### Run
 Either run the launch file `roslaunch xela_server service.launch` or activate everything separately `roscore`, `xela_server` and `rosrun xela_server xela_service`
-> __Note__ For the launch file, the xela_server app must be in the `path` variable or you would need to replace the `xela_server` app inside the `scripts` directory with the one from the main app suite
+> __Note__ For the launch file, the xela_server app must be in the `PATH` variable or you would need to replace the `xela_server` app inside the `scripts` directory with the one from the main app suite
 ### Services
 | __Service call__ | __Explanation__ |__Example output__ |
 | --- | --- | --- |
