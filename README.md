@@ -1,4 +1,19 @@
 # XELA Sensor Server ROS module package
+
+## <span style="color:red">Attention</span>:
+
+This package is now considered as outdated and might not receive any further updates.
+
+### <span style="color:#EFA300">__ROS 1__</span>
+For the latest __ROS 1__ package, please use [ROS Node for XELA Sensors (ROS 1)](https://github.com/mcsix/xela_server_ros).
+> Note: The code will be incompatible with this package and will require a full rewrite of the code that uses it.
+
+### <span style="color:#EFA300">__ROS 2__</span>
+For the latest __ROS 2__ package, please use [ROS Node for XELA Sensors (ROS 2)](https://github.com/mcsix/xela_server_ros2).
+> Note: This code will be incompatible with any ROS 1 package and has the same naming as the ROS 1 package mentioned above.
+
+---
+
 ## Disclaimer
 This package is released As Is and under GNU GPL v3 license.
 ## Purpose
